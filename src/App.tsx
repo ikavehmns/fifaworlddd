@@ -17,7 +17,7 @@ import {
 } from 'firebase/auth';
 
 // آدرس وب‌سرویس واقعی جام جهانی ۲۰۲۶
-const LIVE_API_BASE = "https://worldcup26.ir/get";
+const LIVE_API_BASE = "https://corsproxy.io/?https://worldcup26.ir/get";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'matches' | 'stats' | 'profile'>('matches');
