@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Match, GroupStandings, UserPrediction, LeaderboardUser, UserProfileData } from './types';
+import { Match, GroupStandings, UserPrediction, LeaderboardUser, UserProfileData, TeamStanding } from './types';
 import MatchesView from './components/MatchesView';
 import StatsView from './components/StatsView';
 import ProfileView from './components/ProfileView';
@@ -16,13 +16,13 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 
-// آدرس پایه برای دریافت اطلاعات (هنگام تست محلی خالی می‌ماند و برای APK به آدرس سرور کلودفلر شما تغییر می‌کند)
-const API_BASE = ""; 
+// آدرس وب‌سرویس واقعی جام جهانی ۲۰۲۶
+const LIVE_API_BASE = "https://worldcup26.ir/get";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'matches' | 'stats' | 'profile'>('matches');
   
-  // وضعیت‌های زنده دریافتی از سرور
+  // وضعیت‌های زنده دریافتی از سرور واقعی
   const [matches, setMatches] = useState<Match[]>([]);
   const [groups, setGroups] = useState<GroupStandings[]>([]);
   const [userPredictions, setUserPredictions] = useState<UserPrediction[]>([]);
@@ -36,33 +36,128 @@ export default function App() {
   const [activeNotification, setActiveNotification] = useState<string | null>(null);
   const [prevEventsCount, setPrevEventsCount] = useState<Record<string, number>>({});
 
-  // جزئیات کارت بانکی برای درگاه تستی خرید نسخه ویژه
+  // جزئیات درگاه تستی خرید نسخه ویژه
   const [cardHolder, setCardHolder] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
+  // واکشی داده‌های زنده و تبدیل آن‌ها به مدل پروژه شما
+  const loadLiveWorldCupData = async () => {
+    try {
+      // ۱. ابتدا دریافت اطلاعات ۴۸ تیم برای واکشی پرچم‌ها و مخفف فیفا
+      const teamsRes = await fetch(`${LIVE_API_BASE}/teams`);
+      const teamsList = await teamsRes.json();
+      
+      // ساخت نقشه راهنما برای دستیابی سریع به مشخصات تیم‌ها با ID
+      const teamsMap: Record<string, { name_fa: string; name_en: string; fifa_code: string; flag: string }> = {};
+      if (Array.isArray(teamsList)) {
+        teamsList.forEach((t: any) => {
+          teamsMap[t.id] = {
+            name_fa: t.name_fa || t.name_en,
+            name_en: t.name_en,
+            fifa_code: t.fifa_code,
+            flag: t.flag || "🏳️"
+          };
+        });
+      }
+
+      // ۲. دریافت ۱۰۴ مسابقه جام جهانی
+      const gamesRes = await fetch(`${LIVE_API_BASE}/games`);
+      const gamesData = await gamesRes.json();
+      const rawGames = gamesData.games || [];
+
+      // تبدیل قالب داده‌های API به قالب کلاس‌های Match در پروژه شما
+      const mappedMatches: Match[] = rawGames.map((game: any): Match => {
+        const homeTeamInfo = teamsMap[game.home_team_id] || { name_fa: game.home_team_name_fa || game.home_team_name_en, name_en: game.home_team_name_en, fifa_code: "T1", flag: "🏳️" };
+        const awayTeamInfo = teamsMap[game.away_team_id] || { name_fa: game.away_team_name_fa || game.away_team_name_en, name_en: game.away_team_name_en, fifa_code: "T2", flag: "🏳️" };
+
+        // تشخیص وضعیت مسابقه
+        let status: 'upcoming' | 'live' | 'finished' = 'upcoming';
+        if (game.finished === "TRUE") {
+          status = 'finished';
+        } else if (game.time_elapsed !== "notstarted" && game.time_elapsed !== "null") {
+          status = 'live';
+        }
+
+        // استخراج تاریخ و ساعت شمسی
+        const dateParts = game.persian_date ? game.persian_date.split(' ') : ["1405-03-21", "13:00"];
+        const matchDate = dateParts[0];
+        const matchTime = dateParts[1] || "13:00";
+
+        return {
+          id: game.id.toString(),
+          homeTeam: {
+            id: game.home_team_id.toString(),
+            name: homeTeamInfo.name_fa,
+            code: homeTeamInfo.fifa_code,
+            flag: homeTeamInfo.flag
+          },
+          awayTeam: {
+            id: game.away_team_id.toString(),
+            name: awayTeamInfo.name_fa,
+            code: awayTeamInfo.fifa_code,
+            flag: awayTeamInfo.flag
+          },
+          homeScore: parseInt(game.home_score) || 0,
+          awayScore: parseInt(game.away_score) || 0,
+          status,
+          date: matchDate,
+          time: matchTime,
+          group: game.group ? `گروه ${game.group}` : "مرحله حذفی",
+          stadium: game.stadium_name_fa || game.stadium_name_en || "ورزشگاه نامعلوم",
+          minute: parseInt(game.time_elapsed) || 0,
+          events: [] // رویدادها را می‌توان خالی نگه داشت یا از آرایه فرعی لود کرد
+        };
+      });
+
+      setMatches(mappedMatches);
+
+      // ۳. دریافت جداول رده‌بندی از سرور زنده
+      const groupsRes = await fetch(`${LIVE_API_BASE}/groups`);
+      const rawGroups = await groupsRes.json();
+      
+      const mappedGroups: GroupStandings[] = rawGroups.map((g: any): GroupStandings => {
+        return {
+          groupName: `گروه ${g.group}`,
+          standings: g.teams.map((t: any): TeamStanding => {
+            const teamInfo = teamsMap[t.team_id] || { name_fa: `تیم ${t.team_id}`, name_en: '', fifa_code: 'T', flag: '🏳️' };
+            return {
+              teamId: t.team_id.toString(),
+              name: teamInfo.name_fa,
+              code: teamInfo.fifa_code,
+              flag: teamInfo.flag,
+              played: parseInt(t.played) || 0,
+              won: parseInt(t.won) || 0,
+              drawn: parseInt(t.drawn) || 0,
+              lost: parseInt(t.lost) || 0,
+              gf: parseInt(t.gf) || 0,
+              ga: parseInt(t.ga) || 0,
+              gd: (parseInt(t.gf) || 0) - (parseInt(t.ga) || 0),
+              points: parseInt(t.pts) || 0,
+              status: 'Pending' // وضعیت اولیه
+            };
+          })
+        };
+      });
+
+      setGroups(mappedGroups);
+
+    } catch (e) {
+      console.error("خطا در همگام‌سازی با سرور زنده جام جهانی:", e);
+    }
+  };
+
   // دریافت اولیه داده‌ها هنگام باز شدن برنامه
   useEffect(() => {
     const loadInitialData = async () => {
+      // بارگذاری داده‌های زنده جام جهانی از وب‌سرویس
+      await loadLiveWorldCupData();
+
       try {
-        const response = await fetch(`${API_BASE}/api/matches`);
-        const data = await response.json();
-        if (data && data.matches) {
-          setMatches(data.matches);
-          setGroups(data.groups || []);
-
-          // ثبت تعداد رویدادهای اولیه برای جلوگیری از شلیک هشدارهای تکراری در شروع برنامه
-          const initCounts: Record<string, number> = {};
-          data.matches.forEach((m: Match) => {
-            initCounts[m.id] = m.events ? m.events.length : 0;
-          });
-          setPrevEventsCount(initCounts);
-        }
-
         // ورود پیش‌فرض به عنوان کاربر دمو
-        const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
+        const loginRes = await fetch(`/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: 'ikavehmash@gmail.com', displayName: 'کاوه‌مش', uid: 'demo-user' })
@@ -76,7 +171,7 @@ export default function App() {
 
         // بارگذاری پیش‌بینی‌ها
         const currentUid = firebaseAuth.currentUser?.uid || 'demo-user';
-        const predRes = await fetch(`${API_BASE}/api/predictions/${currentUid}`);
+        const predRes = await fetch(`/api/predictions/${currentUid}`);
         if (predRes.ok) {
           const predData = await predRes.json();
           if (Array.isArray(predData)) {
@@ -84,8 +179,8 @@ export default function App() {
           }
         }
 
-        // بارگذاری جدول رده‌بندی کاربران (لیدربورد)
-        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
+        // بارگذاری لیدربورد
+        const leaderRes = await fetch('/api/leaderboard');
         if (leaderRes.ok) {
           const leaderData = await leaderRes.json();
           if (Array.isArray(leaderData)) {
@@ -106,13 +201,13 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const res = await fetch(`${API_BASE}/api/profile/${firebaseUser.uid}`);
+          const res = await fetch(`/api/profile/${firebaseUser.uid}`);
           if (res.ok) {
             const data = await res.json();
             if (data && !data.error) {
               setUser(data);
               
-              const predRes = await fetch(`${API_BASE}/api/predictions/${firebaseUser.uid}`);
+              const predRes = await fetch(`/api/predictions/${firebaseUser.uid}`);
               if (predRes.ok) {
                 const predData = await predRes.json();
                 if (Array.isArray(predData)) {
@@ -129,46 +224,16 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // حلقه پایش ۶ ثانیه‌ای برای دریافت رویدادها و نتایج زنده (Live Alerts!)
+  // پایش ۶ ثانیه‌ای برای دریافت نتایج و بروزرسانی پیش‌بینی‌ها
   useEffect(() => {
     const handlePolling = async () => {
+      // به‌روزرسانی مسابقات زنده جام جهانی از وب‌سرویس
+      await loadLiveWorldCupData();
+
       try {
-        const response = await fetch(`${API_BASE}/api/matches`);
-        const data = await response.json();
-        if (data && data.matches) {
-          const freshMatches: Match[] = data.matches;
-          setMatches(freshMatches);
-          setGroups(data.groups || []);
-
-          // بررسی رویدادهای جدید بازی‌ها جهت نمایش اعلانات زنده
-          freshMatches.forEach(m => {
-            const prevCount = prevEventsCount[m.id] || 0;
-            if (m.events && m.events.length > prevCount) {
-              const latestEvent = m.events[m.events.length - 1];
-              
-              if (latestEvent.type === 'goal') {
-                setActiveNotification(`⚽ گل! ${latestEvent.player} برای تیم ${m.homeTeam.id === latestEvent.teamId ? m.homeTeam.name : m.awayTeam.name} گلزنی کرد! (${m.homeScore} - ${m.awayScore})`);
-                setTimeout(() => setActiveNotification(null), 5000);
-              } else if (latestEvent.type === 'red_card') {
-                setActiveNotification(`🟥 کارت قرمز! ${latestEvent.player} اخراج شد!`);
-                setTimeout(() => setActiveNotification(null), 5000);
-              } else if (latestEvent.type === 'fulltime') {
-                setActiveNotification(`🏁 پایان بازی! ${m.homeTeam.name} ${m.homeScore} - ${m.awayScore} ${m.awayTeam.name}. سوت پایان زده شد!`);
-                setTimeout(() => setActiveNotification(null), 6000);
-              }
-
-              // به روز رسانی تعداد رویدادها
-              setPrevEventsCount(prev => ({
-                ...prev,
-                [m.id]: m.events.length
-              }));
-            }
-          });
-        }
-
         // به‌روزرسانی پروفایل کاربر
         if (user) {
-          const profRes = await fetch(`${API_BASE}/api/profile/${user.uid}`);
+          const profRes = await fetch(`/api/profile/${user.uid}`);
           if (profRes.ok) {
             const profData = await profRes.json();
             if (profData && !profData.error) {
@@ -177,7 +242,7 @@ export default function App() {
           }
 
           // به‌روزرسانی تاریخچه پیش‌بینی‌ها
-          const predRes = await fetch(`${API_BASE}/api/predictions/${user.uid}`);
+          const predRes = await fetch(`/api/predictions/${user.uid}`);
           if (predRes.ok) {
             const predData = await predRes.json();
             if (Array.isArray(predData)) {
@@ -187,7 +252,7 @@ export default function App() {
         }
 
         // به‌روزرسانی جدول جهانی کاربران
-        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
+        const leaderRes = await fetch('/api/leaderboard');
         if (leaderRes.ok) {
           const leaderData = await leaderRes.json();
           if (Array.isArray(leaderData)) {
@@ -210,7 +275,7 @@ export default function App() {
       const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, passwordAndPasswordPlain);
       const firebaseUser = userCredential.user;
 
-      const response = await fetch(`${API_BASE}/api/auth/login`, {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: firebaseUser.email, displayName: firebaseUser.displayName || email.split('@')[0], uid: firebaseUser.uid })
@@ -219,11 +284,11 @@ export default function App() {
       if (data.success) {
         setUser(data.user);
         
-        const predRes = await fetch(`${API_BASE}/api/predictions/${data.user.uid}`);
+        const predRes = await fetch(`/api/predictions/${data.user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
-        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
+        const leaderRes = await fetch('/api/leaderboard');
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
@@ -242,7 +307,7 @@ export default function App() {
       const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, passwordAndPasswordPlain);
       const firebaseUser = userCredential.user;
 
-      const response = await fetch(`${API_BASE}/api/auth/login`, {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: firebaseUser.email, displayName, uid: firebaseUser.uid })
@@ -252,7 +317,7 @@ export default function App() {
         setUser(data.user);
         setUserPredictions([]);
 
-        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
+        const leaderRes = await fetch('/api/leaderboard');
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
@@ -272,7 +337,7 @@ export default function App() {
       const result = await signInWithPopup(firebaseAuth, provider);
       const firebaseUser = result.user;
 
-      const response = await fetch(`${API_BASE}/api/auth/google`, {
+      const response = await fetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -285,11 +350,11 @@ export default function App() {
       if (data.success) {
         setUser(data.user);
         
-        const predRes = await fetch(`${API_BASE}/api/predictions/${data.user.uid}`);
+        const predRes = await fetch(`/api/predictions/${data.user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
-        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
+        const leaderRes = await fetch('/api/leaderboard');
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
@@ -315,7 +380,7 @@ export default function App() {
     }
   };
 
-  // ارسال ثبت پیش‌بینی‌ها
+  // ثبت پیش‌بینی‌ها
   const handleScorePrediction = async (matchId: string, homeScore: number, awayScore: number) => {
     if (!user) {
       setActiveNotification('⚠️ ابتدا از تب حساب کاربری وارد شوید تا امکان ثبت پیش‌بینی فراهم شود!');
@@ -324,7 +389,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/predictions`, {
+      const response = await fetch(`/api/predictions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -337,7 +402,7 @@ export default function App() {
 
       const resData = await response.json();
       if (resData.success) {
-        const predRes = await fetch(`${API_BASE}/api/predictions/${user.uid}`);
+        const predRes = await fetch(`/api/predictions/${user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
@@ -349,14 +414,14 @@ export default function App() {
     }
   };
 
-  // فرآیند فعال‌سازی نسخه ویژه (تستی)
+  // فعال‌سازی نسخه ویژه (تستی)
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setSubmittingPayment(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/subscribe`, {
+      const response = await fetch(`/api/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -384,7 +449,7 @@ export default function App() {
   return (
     <div dir="rtl" className="min-h-screen bg-[#050505] text-[#F3F4F6] flex justify-center items-start py-0 md:py-8 px-0 font-sans tracking-tight leading-normal">
       
-      {/* هشدارهای کشویی بالای صفحه (اعلان گل، کارت زرد، کارت قرمز و پایان بازی) */}
+      {/* اعلان‌های کشویی کشویی بالای صفحه */}
       <AnimatePresence>
         {activeNotification && (
           <motion.div
@@ -410,10 +475,10 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* شبیه‌ساز ابعاد تلفن همراه */}
+      {/* ابعاد تلفن همراه */}
       <div className="w-full max-w-md min-h-screen md:min-h-[812px] md:max-h-[860px] flex flex-col justify-between bg-zinc-950 md:rounded-[36px] overflow-hidden border-2 border-zinc-900 shadow-2xl relative">
         
-        {/* هدر بالایی اپلیکیشن */}
+        {/* هدر بالایی */}
         <header className="px-5 py-4 bg-black border-b border-zinc-900 flex items-center justify-between select-none relative shrink-0">
           <div className="flex items-center gap-3">
             <div className="bg-green-400 text-black font-black px-2.5 py-0.5 text-base tracking-tighter rounded-sm select-none">WC.26</div>
@@ -449,10 +514,10 @@ export default function App() {
         {/* بخش اسکرول محتوای اصلی */}
         <main className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-sans">
           
-          {/* بنر تبلیغاتی موقت اپلیکیشن (با ارتقا به نسخه پرمیوم مخفی می‌شود) */}
+          {/* بنر تبلیغاتی موقت */}
           <AdBanner isPremium={user?.isPremium || false} type="banner" />
 
-          {/* رندر کردن زیرصفحه‌ها بر اساس تب فعال */}
+          {/* رندر کردن زیرصفحه‌ها */}
           {activeTab === 'matches' && (
             <MatchesView
               matches={matches}
@@ -487,10 +552,9 @@ export default function App() {
           )}
         </main>
 
-        {/* نوار ناوبری پایین صفحه (Navigation Bar) */}
+        {/* نوار ناوبری پایین صفحه */}
         <nav className="bg-black border-t border-zinc-900 py-2.5 px-6 flex items-center justify-between select-none shrink-0 rounded-b-none md:rounded-b-[36px]">
           
-          {/* تب بازی‌ها (خانه) */}
           <button
             onClick={() => setActiveTab('matches')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
@@ -502,7 +566,6 @@ export default function App() {
             <span class="text-[10px] font-black tracking-widest text-[9px]">بازی‌ها</span>
           </button>
 
-          {/* تب آمار و جدول‌ها */}
           <button
             onClick={() => setActiveTab('stats')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
@@ -514,7 +577,6 @@ export default function App() {
             <span class="text-[10px] font-black tracking-widest text-[9px]">جداول و آمار</span>
           </button>
 
-          {/* تب پروفایل کاربر */}
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
@@ -527,7 +589,7 @@ export default function App() {
           </button>
         </nav>
 
-        {/* مدال پرداخت تستی (Stripe Checkout Simulation) */}
+        {/* مدال پرداخت تستی */}
         <AnimatePresence>
           {showPaymentModal && (
             <motion.div
@@ -560,7 +622,6 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* فرم ورود اطلاعات درگاه خرید فرضی */}
                 <form onSubmit={handleCheckoutSubmit} className="space-y-3.5">
                   <div className="space-y-1">
                     <label className="text-[9px] font-mono uppercase text-zinc-400 block font-black tracking-widest leading-none">
