@@ -16,42 +16,44 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 
+// آدرس پایه برای دریافت اطلاعات (هنگام تست محلی خالی می‌ماند و برای APK به آدرس سرور کلودفلر شما تغییر می‌کند)
+const API_BASE = ""; 
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'matches' | 'stats' | 'profile'>('matches');
   
-  // Real-time server states
+  // وضعیت‌های زنده دریافتی از سرور
   const [matches, setMatches] = useState<Match[]>([]);
   const [groups, setGroups] = useState<GroupStandings[]>([]);
   const [userPredictions, setUserPredictions] = useState<UserPrediction[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   
-  // Auth state - initialized as demo or retrieved
+  // وضعیت احراز هویت
   const [user, setUser] = useState<UserProfileData | null>(null);
 
-  // Layout states
+  // وضعیت‌های مربوط به چیدمان
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [activeNotification, setActiveNotification] = useState<string | null>(null);
   const [prevEventsCount, setPrevEventsCount] = useState<Record<string, number>>({});
 
-  // Credit Card details for mock checkout gateway list
+  // جزئیات کارت بانکی برای درگاه تستی خرید نسخه ویژه
   const [cardHolder, setCardHolder] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
-  // Sync state loops of live tracker updates
+  // دریافت اولیه داده‌ها هنگام باز شدن برنامه
   useEffect(() => {
-    // Initial data fetch
     const loadInitialData = async () => {
       try {
-        const response = await fetch('/api/matches');
+        const response = await fetch(`${API_BASE}/api/matches`);
         const data = await response.json();
         if (data && data.matches) {
           setMatches(data.matches);
           setGroups(data.groups || []);
 
-          // Record initial events count to prevent spam alert on startup
+          // ثبت تعداد رویدادهای اولیه برای جلوگیری از شلیک هشدارهای تکراری در شروع برنامه
           const initCounts: Record<string, number> = {};
           data.matches.forEach((m: Match) => {
             initCounts[m.id] = m.events ? m.events.length : 0;
@@ -59,11 +61,11 @@ export default function App() {
           setPrevEventsCount(initCounts);
         }
 
-        // Initial login to Demo user as default placeholder
-        const loginRes = await fetch('/api/auth/login', {
+        // ورود پیش‌فرض به عنوان کاربر دمو
+        const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'ikavehmash@gmail.com', displayName: 'ikavehmash', uid: 'demo-user' })
+          body: JSON.stringify({ email: 'ikavehmash@gmail.com', displayName: 'کاوه‌مش', uid: 'demo-user' })
         });
         if (loginRes.ok) {
           const loginData = await loginRes.json();
@@ -72,9 +74,9 @@ export default function App() {
           }
         }
 
-        // Load predictions
+        // بارگذاری پیش‌بینی‌ها
         const currentUid = firebaseAuth.currentUser?.uid || 'demo-user';
-        const predRes = await fetch(`/api/predictions/${currentUid}`);
+        const predRes = await fetch(`${API_BASE}/api/predictions/${currentUid}`);
         if (predRes.ok) {
           const predData = await predRes.json();
           if (Array.isArray(predData)) {
@@ -82,8 +84,8 @@ export default function App() {
           }
         }
 
-        // Load leaderboard
-        const leaderRes = await fetch('/api/leaderboard');
+        // بارگذاری جدول رده‌بندی کاربران (لیدربورد)
+        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
         if (leaderRes.ok) {
           const leaderData = await leaderRes.json();
           if (Array.isArray(leaderData)) {
@@ -99,18 +101,18 @@ export default function App() {
     loadInitialData();
   }, []);
 
-  // Sync real-time Firebase Authentication Sessions
+  // هماهنگ‌سازی نشست‌های Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const res = await fetch(`/api/profile/${firebaseUser.uid}`);
+          const res = await fetch(`${API_BASE}/api/profile/${firebaseUser.uid}`);
           if (res.ok) {
             const data = await res.json();
             if (data && !data.error) {
               setUser(data);
               
-              const predRes = await fetch(`/api/predictions/${firebaseUser.uid}`);
+              const predRes = await fetch(`${API_BASE}/api/predictions/${firebaseUser.uid}`);
               if (predRes.ok) {
                 const predData = await predRes.json();
                 if (Array.isArray(predData)) {
@@ -127,43 +129,35 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Set up 6-second polling loop to simulate active real-time ticking
+  // حلقه پایش ۶ ثانیه‌ای برای دریافت رویدادها و نتایج زنده (Live Alerts!)
   useEffect(() => {
     const handlePolling = async () => {
       try {
-        const response = await fetch('/api/matches');
+        const response = await fetch(`${API_BASE}/api/matches`);
         const data = await response.json();
         if (data && data.matches) {
           const freshMatches: Match[] = data.matches;
           setMatches(freshMatches);
           setGroups(data.groups || []);
 
-          // Check if any new events occurred in active matches for Live Alerts!
+          // بررسی رویدادهای جدید بازی‌ها جهت نمایش اعلانات زنده
           freshMatches.forEach(m => {
             const prevCount = prevEventsCount[m.id] || 0;
             if (m.events && m.events.length > prevCount) {
               const latestEvent = m.events[m.events.length - 1];
-              // Push alert if it is a Goal, Card or whistle event!
+              
               if (latestEvent.type === 'goal') {
-                setActiveNotification(`⚽ GOAL! ${latestEvent.player} scores for ${m.homeTeam.id === latestEvent.teamId ? m.homeTeam.name : m.awayTeam.name}! (${m.homeScore} - ${m.awayScore})`);
-                
-                // Remove notification after 5 seconds
-                setTimeout(() => {
-                  setActiveNotification(null);
-                }, 5000);
+                setActiveNotification(`⚽ گل! ${latestEvent.player} برای تیم ${m.homeTeam.id === latestEvent.teamId ? m.homeTeam.name : m.awayTeam.name} گلزنی کرد! (${m.homeScore} - ${m.awayScore})`);
+                setTimeout(() => setActiveNotification(null), 5000);
               } else if (latestEvent.type === 'red_card') {
-                setActiveNotification(`🟥 RED CARD! ${latestEvent.player} has been sent off!`);
-                setTimeout(() => {
-                  setActiveNotification(null);
-                }, 5000);
+                setActiveNotification(`🟥 کارت قرمز! ${latestEvent.player} اخراج شد!`);
+                setTimeout(() => setActiveNotification(null), 5000);
               } else if (latestEvent.type === 'fulltime') {
-                setActiveNotification(`🏁 FULL TIME! ${m.homeTeam.name} ${m.homeScore} - ${m.awayScore} ${m.awayTeam.name}. Match complete!`);
-                setTimeout(() => {
-                  setActiveNotification(null);
-                }, 6000);
+                setActiveNotification(`🏁 پایان بازی! ${m.homeTeam.name} ${m.homeScore} - ${m.awayScore} ${m.awayTeam.name}. سوت پایان زده شد!`);
+                setTimeout(() => setActiveNotification(null), 6000);
               }
 
-              // Sync fresh count
+              // به روز رسانی تعداد رویدادها
               setPrevEventsCount(prev => ({
                 ...prev,
                 [m.id]: m.events.length
@@ -172,9 +166,9 @@ export default function App() {
           });
         }
 
-        // Sync auth values
+        // به‌روزرسانی پروفایل کاربر
         if (user) {
-          const profRes = await fetch(`/api/profile/${user.uid}`);
+          const profRes = await fetch(`${API_BASE}/api/profile/${user.uid}`);
           if (profRes.ok) {
             const profData = await profRes.json();
             if (profData && !profData.error) {
@@ -182,8 +176,8 @@ export default function App() {
             }
           }
 
-          // Refresh predictions history
-          const predRes = await fetch(`/api/predictions/${user.uid}`);
+          // به‌روزرسانی تاریخچه پیش‌بینی‌ها
+          const predRes = await fetch(`${API_BASE}/api/predictions/${user.uid}`);
           if (predRes.ok) {
             const predData = await predRes.json();
             if (Array.isArray(predData)) {
@@ -192,8 +186,8 @@ export default function App() {
           }
         }
 
-        // Refresh global leaderboard
-        const leaderRes = await fetch('/api/leaderboard');
+        // به‌روزرسانی جدول جهانی کاربران
+        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
         if (leaderRes.ok) {
           const leaderData = await leaderRes.json();
           if (Array.isArray(leaderData)) {
@@ -210,13 +204,13 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [prevEventsCount, user]);
 
-  // Auth Operations
+  // عملیات ورود و ثبت نام
   const handleUserLogin = async (email: string, passwordAndPasswordPlain: string) => {
     try {
       const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, passwordAndPasswordPlain);
       const firebaseUser = userCredential.user;
 
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: firebaseUser.email, displayName: firebaseUser.displayName || email.split('@')[0], uid: firebaseUser.uid })
@@ -225,20 +219,20 @@ export default function App() {
       if (data.success) {
         setUser(data.user);
         
-        const predRes = await fetch(`/api/predictions/${data.user.uid}`);
+        const predRes = await fetch(`${API_BASE}/api/predictions/${data.user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
-        const leaderRes = await fetch('/api/leaderboard');
+        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
-        setActiveNotification(`👋 Welcome back, ${data.user.displayName}! Predictions unlocked.`);
+        setActiveNotification(`👋 خوش آمدید، ${data.user.displayName}! بخش پیش‌بینی باز شد.`);
         setTimeout(() => setActiveNotification(null), 3000);
       }
     } catch (error: any) {
       console.error('Failed checking email authentications: ', error);
-      setActiveNotification(`❌ Login Failed: ${error.message || error}`);
+      setActiveNotification(`❌ ورود ناموفق: اطلاعات صحیح نیست.`);
       setTimeout(() => setActiveNotification(null), 4000);
     }
   };
@@ -248,7 +242,7 @@ export default function App() {
       const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, passwordAndPasswordPlain);
       const firebaseUser = userCredential.user;
 
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: firebaseUser.email, displayName, uid: firebaseUser.uid })
@@ -258,16 +252,16 @@ export default function App() {
         setUser(data.user);
         setUserPredictions([]);
 
-        const leaderRes = await fetch('/api/leaderboard');
+        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
-        setActiveNotification(`🎉 Account created! Welcome, ${data.user.displayName}!`);
+        setActiveNotification(`🎉 حساب کاربری با موفقیت ساخته شد! خوش آمدی، ${data.user.displayName}!`);
         setTimeout(() => setActiveNotification(null), 3000);
       }
     } catch (error: any) {
       console.error('Failed registering new profile: ', error);
-      setActiveNotification(`❌ Register Failed: ${error.message || error}`);
+      setActiveNotification(`❌ ثبت‌نام ناموفق: ${error.message}`);
       setTimeout(() => setActiveNotification(null), 4000);
     }
   };
@@ -278,7 +272,7 @@ export default function App() {
       const result = await signInWithPopup(firebaseAuth, provider);
       const firebaseUser = result.user;
 
-      const response = await fetch('/api/auth/google', {
+      const response = await fetch(`${API_BASE}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -291,20 +285,20 @@ export default function App() {
       if (data.success) {
         setUser(data.user);
         
-        const predRes = await fetch(`/api/predictions/${data.user.uid}`);
+        const predRes = await fetch(`${API_BASE}/api/predictions/${data.user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
-        const leaderRes = await fetch('/api/leaderboard');
+        const leaderRes = await fetch(`${API_BASE}/api/leaderboard`);
         const leaderData = await leaderRes.json();
         setLeaderboard(leaderData);
 
-        setActiveNotification(`👋 Google Connected successfully, welcome ${data.user.displayName}!`);
+        setActiveNotification(`👋 ورود موفقیت‌آمیز با گوگل. خوش آمدید ${data.user.displayName}!`);
         setTimeout(() => setActiveNotification(null), 3000);
       }
     } catch (error: any) {
       console.error('Failed authentication via Google:', error);
-      setActiveNotification(`❌ Google Sign In Failed: ${error.message || error}`);
+      setActiveNotification(`❌ ورود با گوگل ناموفق بود.`);
       setTimeout(() => setActiveNotification(null), 4050);
     }
   };
@@ -314,23 +308,23 @@ export default function App() {
       await firebaseSignOut(firebaseAuth);
       setUser(null);
       setUserPredictions([]);
-      setActiveNotification('Successfully logged out.');
+      setActiveNotification('با موفقیت خارج شدید.');
       setTimeout(() => setActiveNotification(null), 3000);
     } catch (error) {
       console.error('Failed processing singout: ', error);
     }
   };
 
-  // Prediction Submissions
+  // ارسال ثبت پیش‌بینی‌ها
   const handleScorePrediction = async (matchId: string, homeScore: number, awayScore: number) => {
     if (!user) {
-      setActiveNotification('⚠️ Authenticate first via User tab to submit forecasts!');
+      setActiveNotification('⚠️ ابتدا از تب حساب کاربری وارد شوید تا امکان ثبت پیش‌بینی فراهم شود!');
       setTimeout(() => setActiveNotification(null), 3000);
       return;
     }
 
     try {
-      const response = await fetch('/api/predictions', {
+      const response = await fetch(`${API_BASE}/api/predictions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,12 +337,11 @@ export default function App() {
 
       const resData = await response.json();
       if (resData.success) {
-        // Refresh prediction lists locally
-        const predRes = await fetch(`/api/predictions/${user.uid}`);
+        const predRes = await fetch(`${API_BASE}/api/predictions/${user.uid}`);
         const predData = await predRes.json();
         setUserPredictions(predData);
 
-        setActiveNotification('🔮 Prediction locked! Score registered successfully.');
+        setActiveNotification('🔮 پیش‌بینی شما با موفقیت ثبت شد!');
         setTimeout(() => setActiveNotification(null), 3000);
       }
     } catch (error) {
@@ -356,14 +349,14 @@ export default function App() {
     }
   };
 
-  // Premium Payment upgrade gateway
+  // فرآیند فعال‌سازی نسخه ویژه (تستی)
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setSubmittingPayment(true);
 
     try {
-      const response = await fetch('/api/subscribe', {
+      const response = await fetch(`${API_BASE}/api/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -378,7 +371,7 @@ export default function App() {
       if (data.success) {
         setUser(prev => prev ? { ...prev, isPremium: true } : null);
         setShowPaymentModal(false);
-        setActiveNotification('🎉 Payment verified! Welcome to Premium Analytics & Ad-free World!');
+        setActiveNotification('🎉 پرداخت تایید شد! دسترسی ویژه هوش مصنوعی و نسخه بدون تبلیغ فعال گردید!');
         setTimeout(() => setActiveNotification(null), 6000);
       }
     } catch (error) {
@@ -389,26 +382,26 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#F3F4F6] flex justify-center items-start py-0 md:py-8 px-0 font-sans tracking-tight leading-normal">
+    <div dir="rtl" className="min-h-screen bg-[#050505] text-[#F3F4F6] flex justify-center items-start py-0 md:py-8 px-0 font-sans tracking-tight leading-normal">
       
-      {/* Absolute Sliding Push Alerts Banner (Goal / Cards Alert!) */}
+      {/* هشدارهای کشویی بالای صفحه (اعلان گل، کارت زرد، کارت قرمز و پایان بازی) */}
       <AnimatePresence>
         {activeNotification && (
           <motion.div
             initial={{ opacity: 0, y: -40 }}
             animate={{ opacity: 1, y: 16 }}
             exit={{ opacity: 0, y: -40 }}
-            className="fixed top-0 left-4 right-4 z-40 max-w-sm mx-auto rounded-none bg-neon-green p-4 border-2 border-black text-black shadow-xl flex items-start gap-3 select-none"
+            className="fixed top-0 left-4 right-4 z-40 max-w-sm mx-auto rounded-xl bg-green-400 p-4 border-2 border-black text-black shadow-xl flex items-start gap-3 select-none"
             id="alert-push-banner"
           >
             <Bell className="h-5 w-5 shrink-0 animate-bounce mt-0.5" />
-            <div className="flex-1 text-xs">
-              <h5 className="font-black uppercase tracking-widest text-[10px] opacity-70">Matchday Event Pipeline</h5>
+            <div className="flex-1 text-xs text-right">
+              <h5 className="font-black uppercase tracking-widest text-[10px] opacity-70">اطلاعات زنده مسابقات</h5>
               <p className="font-extrabold uppercase italic tracking-tight text-sm leading-tight text-black">{activeNotification}</p>
             </div>
             <button
               onClick={() => setActiveNotification(null)}
-              className="text-black/70 hover:text-black transition-all scale-110"
+              className="text-black/70 hover:text-black transition-all scale-110 mr-auto ml-0"
               id="btn-close-alert"
             >
               <X className="h-4 w-4" />
@@ -417,19 +410,19 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Primary Mobile Telephone chassis container simulation */}
-      <div className="w-full max-w-md min-h-screen md:min-h-[812px] md:max-h-[860px] flex flex-col justify-between bg-zinc-950 md:rounded-[36px] overflow-hidden border-2 border-zinc-805 shadow-2xl relative">
+      {/* شبیه‌ساز ابعاد تلفن همراه */}
+      <div className="w-full max-w-md min-h-screen md:min-h-[812px] md:max-h-[860px] flex flex-col justify-between bg-zinc-950 md:rounded-[36px] overflow-hidden border-2 border-zinc-900 shadow-2xl relative">
         
-        {/* Top Header Section with Stadium details and banner logo */}
+        {/* هدر بالایی اپلیکیشن */}
         <header className="px-5 py-4 bg-black border-b border-zinc-900 flex items-center justify-between select-none relative shrink-0">
           <div className="flex items-center gap-3">
-            <div className="bg-neon-green text-black font-black px-2.5 py-0.5 text-base tracking-tighter rounded-sm select-none">WC.26</div>
-            <div className="leading-none">
+            <div className="bg-green-400 text-black font-black px-2.5 py-0.5 text-base tracking-tighter rounded-sm select-none">WC.26</div>
+            <div className="leading-none text-right">
               <h1 className="text-xs font-black tracking-widest text-white uppercase italic font-display">
-                MUNDIAL
+                جام جهانی ۲۰۲۶
               </h1>
-              <span className="text-[8.5px] font-mono tracking-widest text-[#00FF85] font-extrabold uppercase animate-pulse block mt-0.5">
-                LIVE INSIGHTS
+              <span className="text-[8.5px] font-mono tracking-widest text-green-400 font-extrabold uppercase animate-pulse block mt-0.5">
+                گزارش و تحلیل زنده
               </span>
             </div>
           </div>
@@ -438,28 +431,28 @@ export default function App() {
             {!user?.isPremium && (
               <button
                 onClick={() => setShowPaymentModal(true)}
-                className="rounded bg-neon-green border-2 border-black text-black px-2.5 py-1 text-[9.5px] font-black uppercase tracking-wider hover:bg-white select-none transition-all cursor-pointer active:scale-95"
+                className="rounded bg-green-400 border-2 border-black text-black px-2.5 py-1 text-[9.5px] font-black uppercase tracking-wider hover:bg-white select-none transition-all cursor-pointer active:scale-95"
                 id="btn-header-upgrade"
               >
-                ★ AI PREMIUM
+                ★ نسخه ویژه هوش مصنوعی
               </button>
             )}
             
             {user?.isPremium && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-mono font-black text-neon-green bg-[#00FF85]/10 border border-[#00FF85]/30 px-2 py-0.5 rounded select-none uppercase tracking-wider">
-                ★ PRO MODE
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-mono font-black text-green-400 bg-green-400/10 border border-green-400/30 px-2 py-0.5 rounded select-none uppercase tracking-wider">
+                ★ حالت حرفه‌ای فعال
               </span>
             )}
           </div>
         </header>
 
-        {/* Content staging window (Smooth scroll container) */}
+        {/* بخش اسکرول محتوای اصلی */}
         <main className="flex-1 overflow-y-auto px-4 py-3 space-y-3 font-sans">
           
-          {/* Mock In-App Advertisement Banner Unit. Hides when Subscriber logs as PRO */}
+          {/* بنر تبلیغاتی موقت اپلیکیشن (با ارتقا به نسخه پرمیوم مخفی می‌شود) */}
           <AdBanner isPremium={user?.isPremium || false} type="banner" />
 
-          {/* Render Active View Subscreens */}
+          {/* رندر کردن زیرصفحه‌ها بر اساس تب فعال */}
           {activeTab === 'matches' && (
             <MatchesView
               matches={matches}
@@ -494,47 +487,47 @@ export default function App() {
           )}
         </main>
 
-        {/* Bottom Smartphone Native Navigation Layout */}
+        {/* نوار ناوبری پایین صفحه (Navigation Bar) */}
         <nav className="bg-black border-t border-zinc-900 py-2.5 px-6 flex items-center justify-between select-none shrink-0 rounded-b-none md:rounded-b-[36px]">
           
-          {/* Tab Matches (Home layout) */}
+          {/* تب بازی‌ها (خانه) */}
           <button
             onClick={() => setActiveTab('matches')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
-              activeTab === 'matches' ? 'text-neon-green font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
+              activeTab === 'matches' ? 'text-green-400 font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
             }`}
             id="nav-tab-matches"
           >
             <Calendar className="h-4.5 w-4.5" />
-            <span className="text-[10px] font-black tracking-widest text-[9px]">Home</span>
+            <span class="text-[10px] font-black tracking-widest text-[9px]">بازی‌ها</span>
           </button>
 
-          {/* Tab Statistics */}
+          {/* تب آمار و جدول‌ها */}
           <button
             onClick={() => setActiveTab('stats')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
-              activeTab === 'stats' ? 'text-neon-green font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
+              activeTab === 'stats' ? 'text-green-400 font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
             }`}
             id="nav-tab-stats"
           >
             <Award className="h-4.5 w-4.5" />
-            <span className="text-[10px] font-black tracking-widest text-[9px]">Insight</span>
+            <span class="text-[10px] font-black tracking-widest text-[9px]">جداول و آمار</span>
           </button>
 
-          {/* Tab User Profile */}
+          {/* تب پروفایل کاربر */}
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex flex-col items-center gap-1.5 py-1 px-3 rounded-xl transition-all ${
-              activeTab === 'profile' ? 'text-neon-green font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
+              activeTab === 'profile' ? 'text-green-400 font-black scale-102 font-display uppercase italic tracking-tighter' : 'text-slate-500 hover:text-slate-350 uppercase tracking-tighter font-medium'
             }`}
             id="nav-tab-profile"
           >
             <User className="h-4.5 w-4.5" />
-            <span className="text-[10px] font-black tracking-widest text-[9px]">User</span>
+            <span class="text-[10px] font-black tracking-widest text-[9px]">کاربر</span>
           </button>
         </nav>
 
-        {/* Dynamic Stripe Checkout Sandbox Modal popup */}
+        {/* مدال پرداخت تستی (Stripe Checkout Simulation) */}
         <AnimatePresence>
           {showPaymentModal && (
             <motion.div
@@ -543,58 +536,58 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans text-xs"
             >
-              <div className="relative w-full max-w-sm rounded-[12px] overflow-hidden bg-black border-2 border-neon-green p-5 text-white shadow-2xl flex flex-col animate-fade-in">
+              <div className="relative w-full max-w-sm rounded-[12px] overflow-hidden bg-black border-2 border-green-400 p-5 text-white shadow-2xl flex flex-col animate-fade-in text-right">
                 <button
                   onClick={() => setShowPaymentModal(false)}
-                  className="absolute top-4 right-4 p-1 rounded-sm bg-zinc-900 border border-zinc-850 text-slate-400 hover:text-white transition-colors"
+                  className="absolute top-4 left-4 p-1 rounded-sm bg-zinc-900 border border-zinc-850 text-slate-400 hover:text-white transition-colors"
                   id="btn-close-payment"
                 >
                   <X className="h-4 w-4" />
                 </button>
 
                 <div className="flex items-center gap-2 mb-4 border-b border-zinc-900 pb-2.5">
-                  <CreditCard className="h-5 w-5 text-neon-green" />
+                  <CreditCard className="h-5 w-5 text-green-400" />
                   <h3 className="text-xs font-black text-slate-100 uppercase tracking-widest font-display italic">
-                    Stripe Checkout Sandbox
+                    شبیه‌ساز پرداخت ایمن زرین‌پال / استرایپ
                   </h3>
                 </div>
 
-                <div className="mb-4 bg-zinc-900 border-l-4 border-neon-green p-3">
+                <div className="mb-4 bg-zinc-900 border-r-4 border-green-400 p-3">
                   <p className="text-[11px] leading-relaxed text-zinc-300">
-                    🏆 <strong className="text-white font-extrabold uppercase font-display tracking-tight text-[11px]">MUNDIAL '26 PREMIUM ANALYST TICKET</strong>
+                    🏆 <strong className="text-white font-extrabold uppercase font-display tracking-tight text-[11px]">بلیت آنالیز پیشرفته جام جهانی ۲۰۲۶</strong>
                     <br />
-                    Complete checkout to unlock Gemini Tactical Report Predictor, formations schemas, unavailable player lists, and remove advertisements instantly.
+                    با خرید نسخه ویژه، قفل آنالیزهای تاکتیکی هوش مصنوعی جمینی (Gemini)، الگوهای چیدمان تیم‌ها، وضعیت مصدومان/محرومان را باز کرده و تبلیغات برنامه را کاملاً حذف کنید.
                   </p>
                 </div>
 
-                {/* Form Inputs mock checkout fields */}
+                {/* فرم ورود اطلاعات درگاه خرید فرضی */}
                 <form onSubmit={handleCheckoutSubmit} className="space-y-3.5">
                   <div className="space-y-1">
                     <label className="text-[9px] font-mono uppercase text-zinc-400 block font-black tracking-widest leading-none">
-                      Cardholder Full Name
+                      نام و نام خانوادگی دارنده کارت
                     </label>
                     <input
                       type="text"
                       required
                       value={cardHolder}
                       onChange={(e) => setCardHolder(e.target.value)}
-                      placeholder="e.g. striker2026"
-                      className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-neon-green text-xs"
+                      placeholder="مانند: کاوه مش"
+                      className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-green-400 text-xs text-right"
                       id="input-card-holder"
                     />
                   </div>
 
                   <div className="space-y-1">
                     <label className="text-[9px] font-mono uppercase text-zinc-400 block font-black tracking-widest leading-none">
-                      Credit Card Number
+                      شماره کارت بانکی
                     </label>
                     <input
                       type="text"
                       required
                       value={cardNumber}
                       onChange={(e) => setCardNumber(e.target.value)}
-                      placeholder="4242 • 4242 • 4242 • 4242"
-                      className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-350 focus:outline-none focus:border-neon-green font-mono tracking-widest text-xs"
+                      placeholder="۶۰۳۷ - ۹۹۱۹ - ۹۹۱۹ - ۹۹۱۹"
+                      className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-green-400 font-mono tracking-widest text-xs text-center"
                       id="input-card-number"
                     />
                   </div>
@@ -602,31 +595,31 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="text-[9px] font-mono uppercase text-zinc-400 block font-black tracking-widest leading-none">
-                        Expiry Date
+                        تاریخ انقضا (ماه/سال)
                       </label>
                       <input
                         type="text"
                         required
                         value={cardExpiry}
                         onChange={(e) => setCardExpiry(e.target.value)}
-                        placeholder="MM/YY"
-                        className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-neon-green text-center font-mono uppercase text-xs"
+                        placeholder="۰۴/۰۹"
+                        className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-green-400 text-center font-mono uppercase text-xs"
                         id="input-card-expiry"
                       />
                     </div>
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-mono uppercase text-zinc-400 block font-black tracking-widest leading-none">
-                        CVC Code
+                        کد امنیتی CVV2
                       </label>
                       <input
                         type="password"
                         required
-                        maxLength={3}
+                        maxLength={4}
                         value={cardCvv}
                         onChange={(e) => setCardCvv(e.target.value)}
-                        placeholder="•••"
-                        className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-neon-green text-center font-mono text-xs"
+                        placeholder="••••"
+                        className="w-full rounded bg-zinc-900 border border-zinc-800 px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-green-400 text-center font-mono text-xs"
                         id="input-card-cvc"
                       />
                     </div>
@@ -635,24 +628,24 @@ export default function App() {
                   <button
                     type="submit"
                     disabled={submittingPayment}
-                    className="w-full mt-2 rounded bg-neon-green text-black uppercase text-xs font-black tracking-widest flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-98 disabled:opacity-50 h-10 border border-black cursor-pointer italic font-display"
+                    className="w-full mt-2 rounded bg-green-400 text-black uppercase text-xs font-black tracking-widest flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-98 disabled:opacity-50 h-10 border border-black cursor-pointer italic font-display"
                     id="btn-checkout-submit"
                   >
                     {submittingPayment ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin text-black" />
-                        <span>Verifying with Stripe...</span>
+                        <span>در حال بررسی با درگاه بانکی...</span>
                       </>
                     ) : (
                       <>
-                        <span>Verify Secure Checkout Credit Ticket</span>
+                        <span>پرداخت شبیه‌سازی‌شده و ارتقای بلیت</span>
                       </>
                     )}
                   </button>
                 </form>
 
                 <p className="text-[9.5px] text-center text-slate-500 font-mono leading-normal mt-4">
-                  Stripe Test keys are fully integrated on port 3000. No actual funds will be transferred.
+                  تست درگاه پرداخت به صورت آفلاین متصل است. هیچ وجه واقعی کسر نخواهد شد.
                 </p>
               </div>
             </motion.div>
