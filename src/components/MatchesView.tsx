@@ -124,7 +124,7 @@ export default function MatchesView({
               </div>
               
               <div className="overflow-x-auto">
-                <table class="w-full text-right font-sans">
+                <table className="w-full text-right font-sans">
                   <thead>
                     <tr className="text-[9px] text-zinc-500 font-mono uppercase font-black tracking-widest border-b border-zinc-900 pb-1">
                       <th className="py-2 pr-2">تیم</th>
@@ -141,8 +141,12 @@ export default function MatchesView({
                           <span className="text-zinc-600 text-[10px] w-3 font-mono">
                             {sIdx + 1}
                           </span>
-                          <span className="text-base leading-none select-none">
-                            {stand.flag}
+                          <span className="w-6 h-4 flex items-center justify-center leading-none select-none shrink-0">
+                            {stand.flag.startsWith('http') ? (
+                              <img src={stand.flag} className="w-full h-full object-cover rounded-sm border border-zinc-800" alt="flag" />
+                            ) : (
+                              <span className="text-base">{stand.flag}</span>
+                            )}
                           </span>
                           <span className="font-extrabold uppercase font-display tracking-tight text-xs">{stand.name}</span>
                           <span className="text-[10px] tracking-wider font-mono text-zinc-600 font-bold uppercase">
@@ -227,11 +231,15 @@ export default function MatchesView({
                   {/* چیدمان گرافیکی تابلوی نتایج بازی */}
                   <div className="p-4 flex items-center justify-between text-white relative">
                     
-                    {/* تیم میزبان (در زبان فارسی در سمت راست قرار می‌گیرد) */}
+                    {/* تیم میزبان */}
                     <div className="flex flex-col items-center justify-center flex-1 text-center select-none">
-                      <span className="text-3xl filter drop-shadow mb-1.5 transition-transform duration-200 hover:scale-105">
-                        {match.homeTeam.flag}
-                      </span>
+                      <div className="w-12 h-8 flex items-center justify-center filter drop-shadow mb-1.5 transition-transform duration-200 hover:scale-105 select-none">
+                        {match.homeTeam.flag.startsWith('http') ? (
+                          <img src={match.homeTeam.flag} className="w-full h-full object-cover rounded shadow-sm border border-zinc-800" alt="flag" />
+                        ) : (
+                          <span className="text-3xl">{match.homeTeam.flag}</span>
+                        )}
+                      </div>
                       <h4 className="text-xs font-black tracking-tight max-w-[100px] text-white line-clamp-1 font-display uppercase italic">
                         {match.homeTeam.name}
                       </h4>
@@ -244,7 +252,7 @@ export default function MatchesView({
                     <div className="flex flex-col items-center justify-center px-4 shrink-0 min-w-[100px]">
                       {match.status === 'live' ? (
                         <>
-                          <div className="text-2xl font-black font-mono tracking-tighter bg-red-950/20 text-red-500 border border-red-500/30 px-3 py-1 flex items-center gap-1 italic rounded-md leading-none">
+                          <div className="text-2xl font-black font-mono tracking-tighter bg-red-950/20 text-red-500 border border-red-550/30 px-3 py-1 flex items-center gap-1 italic rounded-md leading-none">
                             <span>{match.homeScore}</span>
                             <span className="animate-pulse mx-0.5 text-xs text-red-500">:</span>
                             <span>{match.awayScore}</span>
@@ -282,9 +290,13 @@ export default function MatchesView({
 
                     {/* تیم میهمان */}
                     <div className="flex flex-col items-center justify-center flex-1 text-center select-none">
-                      <span className="text-3xl filter drop-shadow mb-1.5 transition-transform duration-200 hover:scale-105">
-                        {match.awayTeam.flag}
-                      </span>
+                      <div className="w-12 h-8 flex items-center justify-center filter drop-shadow mb-1.5 transition-transform duration-200 hover:scale-105 select-none">
+                        {match.awayTeam.flag.startsWith('http') ? (
+                          <img src={match.awayTeam.flag} className="w-full h-full object-cover rounded shadow-sm border border-zinc-800" alt="flag" />
+                        ) : (
+                          <span className="text-3xl">{match.awayTeam.flag}</span>
+                        )}
+                      </div>
                       <h4 className="text-xs font-black tracking-tight max-w-[100px] text-white line-clamp-1 font-display uppercase italic">
                         {match.awayTeam.name}
                       </h4>
