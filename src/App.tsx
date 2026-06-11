@@ -19,9 +19,6 @@ import {
 // آدرس پایه برای دریافت اطلاعات محلی اپلیکیشن (مانند لاگین و پیش‌بینی‌ها)
 const API_BASE = ""; 
 
-// آدرس پایه وب‌سرویس زنده جام جهانی ۲۰۲۶ (اتصال مستقیم و بدون پروکسی)
-const LIVE_API_BASE = "https://worldcup26.ir/get";
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<'matches' | 'stats' | 'profile'>('matches');
   
@@ -31,7 +28,7 @@ export default function App() {
   const [userPredictions, setUserPredictions] = useState<UserPrediction[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   
-  // وضعیت احراز هویت
+  // Statuses of Auth
   const [user, setUser] = useState<UserProfileData | null>(null);
 
   // وضعیت‌های مربوط به چیدمان
@@ -46,12 +43,37 @@ export default function App() {
   const [cardCvv, setCardCvv] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
+  // متد هوشمند برای دور زدن CORS با استفاده از پروکسی‌های پشتیبان (Fallback)
+  const fetchWithProxy = async (endpoint: string) => {
+    const targetUrl = `https://worldcup26.ir/get/${endpoint}`;
+    
+    // لیست پروکسی‌های معتبر و فعال جهانی برای دور زدن فایروال سرور مقصد
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+      `https://thingproxy.freeboard.io/fetch/${targetUrl}`
+    ];
+
+    for (const proxyUrl of proxies) {
+      try {
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const text = await res.text();
+          // بررسی صحت داشتن اطلاعات به صورت JSON
+          const data = JSON.parse(text);
+          return data;
+        }
+      } catch (err) {
+        console.warn(`خطا در پروکسی ${proxyUrl}، تلاش برای پروکسی پشتیبان بعدی...`, err);
+      }
+    }
+    throw new Error("برقراری ارتباط با وب‌سرویس جام جهانی از طریق تمام پروکسی‌ها ناموفق بود.");
+  };
+
   // واکشی داده‌های زنده و تبدیل آن‌ها به مدل پروژه شما
   const loadLiveWorldCupData = async () => {
     try {
-      // ۱. ابتدا دریافت اطلاعات ۴۸ تیم برای واکشی پرچم‌ها و مخفف فیفا
-      const teamsRes = await fetch(`${LIVE_API_BASE}/teams`);
-      const teamsList = await teamsRes.json();
+      // ۱. ابتدا دریافت اطلاعات ۴۸ تیم با استفاده از سیستم پروکسی هوشمند
+      const teamsList = await fetchWithProxy("teams");
       
       // بررسی دفاعی برای جلوگیری از وقوع خطای ساختاری جاوااسکریپت
       if (!Array.isArray(teamsList)) {
@@ -71,8 +93,7 @@ export default function App() {
       });
 
       // ۲. دریافت ۱۰۴ مسابقه جام جهانی
-      const gamesRes = await fetch(`${LIVE_API_BASE}/games`);
-      const gamesData = await gamesRes.json();
+      const gamesData = await fetchWithProxy("games");
       const rawGames = gamesData.games || [];
 
       if (!Array.isArray(rawGames)) {
@@ -127,8 +148,7 @@ export default function App() {
       setMatches(mappedMatches);
 
       // ۳. دریافت جداول رده‌بندی از سرور زنده
-      const groupsRes = await fetch(`${LIVE_API_BASE}/groups`);
-      const rawGroups = await groupsRes.json();
+      const rawGroups = await fetchWithProxy("groups");
       
       if (!Array.isArray(rawGroups)) {
         console.warn("اطلاعات گروه‌ها دریافت نشد:", rawGroups);
