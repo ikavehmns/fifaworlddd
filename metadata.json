@@ -1,0 +1,6 @@
+{
+  "name": "World Cup Tracker & Predictor",
+  "description": "A mobile-first application for tracking live FIFA World Cup matches, predicting outcomes with AI-powered analytics, and managing subscriptions and user leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

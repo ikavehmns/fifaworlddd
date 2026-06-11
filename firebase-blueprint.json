@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile database representation.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "points": { "type": "integer" },
+        "predictionsCount": { "type": "integer" }
+      },
+      "required": ["uid", "email", "displayName", "isPremium", "points", "predictionsCount"]
+    },
+    "Prediction": {
+      "title": "Prediction",
+      "description": "Match prediction made by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "matchId": { "type": "string" },
+        "homeScore": { "type": "integer" },
+        "awayScore": { "type": "integer" },
+        "status": { "type": "string" },
+        "pointsEarned": { "type": "integer" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "matchId", "homeScore", "awayScore", "status", "createdAt"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Information about a World Cup match.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "homeScore": { "type": "integer" },
+        "awayScore": { "type": "integer" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "group": { "type": "string" },
+        "stadium": { "type": "string" },
+        "minute": { "type": "integer" }
+      },
+      "required": ["id", "homeScore", "awayScore", "status", "date", "time", "group", "stadium"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles."
+    },
+    "/predictions/{predictionId}": {
+      "schema": "Prediction",
+      "description": "Collection of user predictions."
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Collection of matches."
+    }
+  }
+}
