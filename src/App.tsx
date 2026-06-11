@@ -16,8 +16,11 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 
-// آدرس وب‌سرویس واقعی جام جهانی ۲۰۲۶
-const LIVE_API_BASE = "https://corsproxy.io/?https://worldcup26.ir/get";
+// آدرس پایه برای دریافت اطلاعات محلی اپلیکیشن (مانند لاگین و پیش‌بینی‌ها)
+const API_BASE = ""; 
+
+// آدرس پایه وب‌سرویس زنده جام جهانی ۲۰۲۶ (اتصال مستقیم و بدون پروکسی)
+const LIVE_API_BASE = "https://worldcup26.ir/get";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'matches' | 'stats' | 'profile'>('matches');
@@ -50,23 +53,32 @@ export default function App() {
       const teamsRes = await fetch(`${LIVE_API_BASE}/teams`);
       const teamsList = await teamsRes.json();
       
+      // بررسی دفاعی برای جلوگیری از وقوع خطای ساختاری جاوااسکریپت
+      if (!Array.isArray(teamsList)) {
+        console.warn("اطلاعات تیم‌ها به صورت آرایه دریافت نشد:", teamsList);
+        return;
+      }
+
       // ساخت نقشه راهنما برای دستیابی سریع به مشخصات تیم‌ها با ID
       const teamsMap: Record<string, { name_fa: string; name_en: string; fifa_code: string; flag: string }> = {};
-      if (Array.isArray(teamsList)) {
-        teamsList.forEach((t: any) => {
-          teamsMap[t.id] = {
-            name_fa: t.name_fa || t.name_en,
-            name_en: t.name_en,
-            fifa_code: t.fifa_code,
-            flag: t.flag || "🏳️"
-          };
-        });
-      }
+      teamsList.forEach((t: any) => {
+        teamsMap[t.id] = {
+          name_fa: t.name_fa || t.name_en,
+          name_en: t.name_en,
+          fifa_code: t.fifa_code,
+          flag: t.flag || "🏳️"
+        };
+      });
 
       // ۲. دریافت ۱۰۴ مسابقه جام جهانی
       const gamesRes = await fetch(`${LIVE_API_BASE}/games`);
       const gamesData = await gamesRes.json();
       const rawGames = gamesData.games || [];
+
+      if (!Array.isArray(rawGames)) {
+        console.warn("اطلاعات بازی‌ها دریافت نشد:", gamesData);
+        return;
+      }
 
       // تبدیل قالب داده‌های API به قالب کلاس‌های Match در پروژه شما
       const mappedMatches: Match[] = rawGames.map((game: any): Match => {
@@ -108,7 +120,7 @@ export default function App() {
           group: game.group ? `گروه ${game.group}` : "مرحله حذفی",
           stadium: game.stadium_name_fa || game.stadium_name_en || "ورزشگاه نامعلوم",
           minute: parseInt(game.time_elapsed) || 0,
-          events: [] // رویدادها را می‌توان خالی نگه داشت یا از آرایه فرعی لود کرد
+          events: []
         };
       });
 
@@ -118,6 +130,11 @@ export default function App() {
       const groupsRes = await fetch(`${LIVE_API_BASE}/groups`);
       const rawGroups = await groupsRes.json();
       
+      if (!Array.isArray(rawGroups)) {
+        console.warn("اطلاعات گروه‌ها دریافت نشد:", rawGroups);
+        return;
+      }
+
       const mappedGroups: GroupStandings[] = rawGroups.map((g: any): GroupStandings => {
         return {
           groupName: `گروه ${g.group}`,
@@ -136,7 +153,7 @@ export default function App() {
               ga: parseInt(t.ga) || 0,
               gd: (parseInt(t.gf) || 0) - (parseInt(t.ga) || 0),
               points: parseInt(t.pts) || 0,
-              status: 'Pending' // وضعیت اولیه
+              status: 'Pending'
             };
           })
         };
@@ -449,7 +466,7 @@ export default function App() {
   return (
     <div dir="rtl" className="min-h-screen bg-[#050505] text-[#F3F4F6] flex justify-center items-start py-0 md:py-8 px-0 font-sans tracking-tight leading-normal">
       
-      {/* اعلان‌های کشویی کشویی بالای صفحه */}
+      {/* اعلان‌های کشویی بالای صفحه */}
       <AnimatePresence>
         {activeNotification && (
           <motion.div
@@ -563,7 +580,7 @@ export default function App() {
             id="nav-tab-matches"
           >
             <Calendar className="h-4.5 w-4.5" />
-            <span class="text-[10px] font-black tracking-widest text-[9px]">بازی‌ها</span>
+            <span className="text-[10px] font-black tracking-widest text-[9px]">بازی‌ها</span>
           </button>
 
           <button
@@ -574,7 +591,7 @@ export default function App() {
             id="nav-tab-stats"
           >
             <Award className="h-4.5 w-4.5" />
-            <span class="text-[10px] font-black tracking-widest text-[9px]">جداول و آمار</span>
+            <span className="text-[10px] font-black tracking-widest text-[9px]">جداول و آمار</span>
           </button>
 
           <button
@@ -585,7 +602,7 @@ export default function App() {
             id="nav-tab-profile"
           >
             <User className="h-4.5 w-4.5" />
-            <span class="text-[10px] font-black tracking-widest text-[9px]">کاربر</span>
+            <span className="text-[10px] font-black tracking-widest text-[9px]">کاربر</span>
           </button>
         </nav>
 
